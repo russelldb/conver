@@ -34,26 +34,30 @@
 %%% conver_client callbacks
 
 init(ProcId, Conf) ->
-  Server = lists:nth((hd(atom_to_list(ProcId)) rem length(Conf))+1, Conf),
+  PBNodes = proplists:get_value(pb_nodes, Conf),
+  K = proplists:get_value(key, Conf),
+  BucketConf = proplists:get_value(bucket, Conf),
+  B = proplists:get_value(name, BucketConf),
+  BProps = proplists:get_value(props, BucketConf),
+  Server = lists:nth((hd(atom_to_list(ProcId)) rem length(PBNodes))+1, PBNodes),
   lager:notice("Riak client connecting to server: ~p.~n", [Server]),
   {ok, Pid} = riakc_pb_socket:start_link(element(1, Server), element(2, Server)),
   %% TODO test if bucket is already initialized
-  Object = riakc_obj:new(<<"bucket">>, <<"key">>, integer_to_binary(0)),
+  Object = riakc_obj:new(B, K, integer_to_binary(0)),
   riakc_pb_socket:put(Pid, Object),
-  riakc_pb_socket:set_bucket(Pid, <<"bucket">>, [{last_write_wins, true},
-    {consistent, false}, {allow_mult, false}]),
-  Pid.
+  riakc_pb_socket:set_bucket(Pid, B, BProps),
+  {B, K, Pid}.
 
-read(Pid, _Key) ->
-  {ok, Fetched} = riakc_pb_socket:get(Pid, <<"bucket">>, <<"key">>),
+read({B, K, Pid}, _Key) ->
+  {ok, Fetched} = riakc_pb_socket:get(Pid, B, K),
   binary_to_integer(riakc_obj:get_value(Fetched)).
 
-write(Pid, _Key, Val) ->
-  Object = riakc_obj:new(<<"bucket">>, <<"key">>, integer_to_binary(Val)),
+write({B, K, Pid}, _Key, Val) ->
+  Object = riakc_obj:new(B, K, integer_to_binary(Val)),
   riakc_pb_socket:put(Pid, Object).
 
-delete(Pid, _Key) ->
-  riakc_pb_socket:delete(Pid, <<"bucket">>, <<"key">>).
+delete({B, K, Pid}, _Key) ->
+  riakc_pb_socket:delete(Pid, B, K).
 
-terminate(Pid) ->
+terminate({_B, _K, Pid}) ->
   riakc_pb_socket:stop(Pid).
